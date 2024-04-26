@@ -216,6 +216,6 @@ async def device_check_command(interaction: nextcord.Interaction):
     
 
 # 봇 실행
-bot.run("MTIzMDQ0NDczMjg1Mzc4NDU5Nw.G2PQQE.3MDtGOPbNBKDUQhUZ3fheLt_0Ax63upogrQm2M")
+bot.run("MTIzMDQ0NDczMjg1Mzc4NDU5Nw.GUeX_e.hjS11ymvzYnVPJtDKdsZlp2xBUJneUtAO4b6Do")
 
 
