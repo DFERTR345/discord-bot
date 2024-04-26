@@ -1,0 +1,221 @@
+import nextcord
+import asyncio
+from nextcord.ext import commands, tasks
+import qrcode  # QR 코드 생성에 사용되는 라이브러리
+from datetime import datetime
+import os
+
+
+# 인텐트 설정
+intents = nextcord.Intents.default()
+intents.messages = True
+intents.guilds = True
+intents.voice_states = True
+intents.message_content = True
+intents.reactions = True
+
+# 봇 객체 생성
+bot = commands.Bot(intents=intents)
+
+# 로그 채널 ID를 지정
+log_channel_id = 1230798189381160982  # 로그 채널 ID (정수로 변경)
+
+# 메시지 보내는 채널 ID를 지정
+send_channel_id = 1230425877762936913  # 2시간마다 메시지를 보낼 채널 ID (정수로 변경)
+
+# 멘션할 역할의 ID를 지정
+role_id = 1230463819604693045  # 멘션할 역할의 ID (정수로 변경)
+
+# 슬래시 커맨드 동기화를 수행합니다.
+@bot.event
+async def on_ready():
+    print(f'봇이 로그인되었습니다: {bot.user.name}')
+    
+    # 봇의 상태 메시지를 설정합니다.
+    await bot.change_presence(
+        status=nextcord.Status.online,
+        activity=nextcord.Activity(
+            type=nextcord.ActivityType.playing,
+            name='안녕하세요! KR봇입니다.'
+        )
+    )
+    
+    await bot.change_presence(status=nextcord.Status.online, activity=nextcord.Game(name="KR봇 관리중 https://discord.gg/urFjtKmqdn KR서버 들어오기"))
+
+        # 사용자 지정 상태 설정법
+        # status=nextcord.Status.online      (온라인)
+        # status=nextcord.Status.idle        (자리 비움)
+        # status=nextcord.Status.dnd         (다른 용무)
+        # status=nextcord.Status.offline     (오프라인)
+        #
+        #   ~~하는 중 등 상태 설정법
+        # activity=nextcord.Game(name="하는 중")
+        # activity=nextcord.Streaming(name="방송 중", url="올리고 싶은 URL")
+        # activity=nextcord.Activity(type=nextcord.ActivityType.listening, name="듣는 중")
+        # activity=nextcord.Activity(type=nextcord.ActivityType.watching, name="시청 중")
+
+    # 슬래시 커맨드 동기화를 수행합니다.
+    try:
+        await bot.tree.sync()
+        print("슬래시 커맨드 동기화 완료")
+    except Exception as e:
+        print(f"슬래시 커맨드 동기화 중 오류가 발생했습니다: {e}")
+
+    # 2시간마다 메시지를 보내는 작업을 시작합니다.
+    send_periodic_message.start()
+
+# 2시간마다 메시지를 보내는 작업을 시작합니다.
+@tasks.loop(hours=2)
+async def send_periodic_message():
+    # 채널을 가져옵니다.
+    channel = bot.get_channel(send_channel_id)
+    if channel:
+        # 멘션할 역할을 가져옵니다.
+        guild = channel.guild
+        role = guild.get_role(role_id)
+        
+        # 임베드 메시지 작성
+        embed = nextcord.Embed(
+            title="안녕하세요!",
+            description=(
+                f"{role.mention if role else ''}\n"
+                "1. '/up'을 사용하여 서버를 up하거나\n"
+                "2. '/추천'을 사용하여 서버를 사이트에 추천하세요!\n\n"
+                "(/up 명령어는 두 시간마다 가능하며 /추천 명령어는 매일 한 번씩 가능합니다.)"
+            ),
+            color=nextcord.Color.green()
+        )
+        
+        # 메시지 전송
+        await channel.send(embed=embed)
+    else:
+        print("지정된 채널을 찾을 수 없습니다.")
+
+# 메시지 삭제 추적
+@bot.event
+async def on_message_delete(message):
+    # 로그 채널을 가져옵니다.
+    log_channel = bot.get_channel(log_channel_id)
+
+    if not log_channel:
+        print(f"로그 채널 ID '{log_channel_id}'을 찾을 수 없습니다.")
+        return
+
+    embed = nextcord.Embed(
+        title="메시지 삭제",
+        description=f"{message.author}가 {message.channel} 채널에서 메시지를 삭제했습니다.",
+        color=nextcord.Color.red()
+    )
+    
+    # 메시지의 내용이 있는 경우에만 추가합니다.
+    if message.content:
+        embed.add_field(name="내용", value=message.content, inline=False)
+
+    if message.attachments:
+        for attachment in message.attachments:
+            embed.add_field(name="첨부 파일 삭제됨", value=f"[{attachment.filename}]({attachment.url})", inline=False)
+
+    await log_channel.send(embed=embed)
+
+# 서버 수 반환 슬래시 커맨드
+@bot.slash_command(name="서버갯수", description="봇이 가입한 서버의 수를 반환합니다.")
+async def server_count_command(interaction: nextcord.Interaction):
+    # 봇이 가입한 서버 수 계산
+    server_count = len(bot.guilds)
+    
+    # 서버 수를 포함한 응답 메시지 생성
+    response_message = f'봇이 가입한 서버 수: {server_count}'
+    
+    # 슬래시 커맨드 응답
+    await interaction.response.send_message(response_message)
+
+# 큐알생성 슬래시 커맨드 추가
+@bot.slash_command(name="큐알생성", description="입력한 링크에 대한 QR 코드를 생성합니다.")
+async def qr_create_command(interaction: nextcord.Interaction, link: str):
+    # 입력된 URL에 대한 QR 코드를 생성합니다.
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(link)
+    qr.make(fit=True)
+
+    # QR 코드를 이미지로 생성합니다.
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    # 이미지 파일로 저장합니다.
+    # 이미지 파일을 일시적으로 저장하여 응답에 사용합니다.
+    img_path = f"qr_code_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+    img.save(img_path)
+
+    # 생성된 QR 코드를 이미지로 사용자에게 전송합니다.
+    await interaction.response.send_message(file=nextcord.File(img_path))
+    
+    # 이미지 파일을 삭제합니다 (일시적인 파일이므로)
+    os.remove(img_path)
+
+# 핑 슬래시 커맨드 추가
+@bot.slash_command(name="핑", description="봇의 핑을 확인합니다.")
+async def ping_command(interaction: nextcord.Interaction):
+    # 봇의 핑을 가져옵니다.
+    bot_ping = round(bot.latency * 1000)  # 밀리초 단위로 변환하여 핑을 계산합니다.
+
+    # 임베드 메시지 작성
+    embed = nextcord.Embed(
+        title=" 퐁이에요!",
+        description=f"KR봇의 핑: {bot_ping}ms",
+        color=nextcord.Color.blue()
+    )
+
+    # 봇의 이미지를 임베드에 추가합니다.
+    embed.set_thumbnail(url=bot.user.avatar.url)
+
+    # '현재 봇의 핑입니다.' 문구를 추가합니다.
+    embed.set_footer(text="현재 봇의 핑입니다.")
+
+    # 슬래시 커맨드 응답
+    await interaction.response.send_message(embed=embed)
+
+# 기기확인 슬래시 커맨드 추가
+@bot.slash_command(name="기기확인", description="현재 접속 기기를 확인합니다.")
+async def device_check_command(interaction: nextcord.Interaction):
+    # 기기별 접속자 수를 저장할 딕셔너리
+    device_count = {"스마트폰": 0, "컴퓨터": 0}
+
+    # 서버의 모든 멤버에 대해 반복하여 기기 확인
+    for member in interaction.guild.members:
+        # 사용자의 presence를 가져옵니다.
+        await member.fetch()
+        
+        # 사용자의 presence가 None이 아니라면
+        if member.raw_status != 'offline':
+            # 사용자가 어떤 기기로 접속했는지 확인합니다.
+            for activity in member.activities:
+                if isinstance(activity, nextcord.Spotify) or isinstance(activity, nextcord.Streaming):
+                    device_count["스마트폰"] += 1
+                elif isinstance(activity, nextcord.CustomActivity) and activity.platform == 'desktop':
+                    device_count["컴퓨터"] += 1
+
+    # 임베드 메시지 작성
+    embed = nextcord.Embed(
+        title="기기 확인",
+        description=f"{interaction.author.mention}님의 디스코드 접속 기기 ({sum(device_count.values())}개)",
+        color=nextcord.Color.gold()
+    )
+
+    # 각 기기별 접속 상태를 추가합니다.
+    for device, count in device_count.items():
+        # 기기에 따라 아이콘을 설정합니다.
+        icon = "🟢" if count > 0 else "🟡"
+        embed.add_field(name=f"{device} {icon}", value=f"{count}개", inline=True)
+
+    # 슬래시 커맨드 응답
+    await interaction.response.send_message(embed=embed)
+    
+
+# 봇 실행
+bot.run("MTIzMDQ0NDczMjg1Mzc4NDU5Nw.G2PQQE.3MDtGOPbNBKDUQhUZ3fheLt_0Ax63upogrQm2M")
+
+
